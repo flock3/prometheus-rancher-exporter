@@ -16,15 +16,15 @@ type Exporter struct {
 	gaugeVecs  map[string]*prometheus.GaugeVec
 }
 
-// NewExporter creates the metrics we wish to monitor
-func newExporter(rancherURL string, accessKey string, secretKey string, hideSys bool) *Exporter {
+// newExporter creates the metrics we wish to monitor
+func newExporter(config config.Config) *Exporter {
 
 	gaugeVecs := addMetrics()
 	return &Exporter{
 		gaugeVecs:  gaugeVecs,
-		rancherURL: rancherURL,
-		accessKey:  accessKey,
-		secretKey:  secretKey,
-		hideSys:    hideSys,
+		rancherURL: config.RancherURL(),
+		accessKey:  config.AccessKey(),
+		secretKey:  config.SecretKey(),
+		hideSys:    config.HideSys(),
 	}
 }

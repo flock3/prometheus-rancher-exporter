@@ -3,12 +3,11 @@ package main
 import (
 	"flag"
 	"net/http"
-	"os"
-	"strconv"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/infinityworksltd/go-common/logger"
+	cfg "github.com/infinityworksltd/prometheus-rancher-exporter/config"
 	"github.com/infinityworksltd/prometheus-rancher-exporter/measure"
 )
 
@@ -18,14 +17,8 @@ const (
 
 // Runtime variables, user controllable for targeting, authentication and filtering.
 var (
-	metricsPath   = getEnv("METRICS_PATH", "/metrics") // Path under which to expose metrics
-	listenAddress = getEnv("LISTEN_ADDRESS", ":9173")  // Address on which to expose metrics
-	rancherURL    = os.Getenv("CATTLE_URL")            // URL of Rancher Server API e.g. http://192.168.0.1:8080/v2-beta
-	accessKey     = os.Getenv("CATTLE_ACCESS_KEY")     // Optional - Access Key for Rancher API
-	secretKey     = os.Getenv("CATTLE_SECRET_KEY")     // Optional - Secret Key for Rancher API
-	logLevel      = getEnv("LOG_LEVEL", "info")        // Optional - Set the logging level
-	//hideSys, _    = strconv.ParseBool(os.Getenv("HIDE_SYS")) // hideSys - Optional - Flag that indicates if the environment variable `HIDE_SYS` is set to a boolean true value
-	hideSys, _ = strconv.ParseBool(getEnv("HIDE_SYS", "true")) // hideSys - Optional - Flag that indicates if the environment variable `HIDE_SYS` is set to a boolean true value
+	config = cfg.Init()
+	log    = logger.Start(config)
 )
 
 // Predefined variables that are used throughout the exporter
@@ -40,51 +33,39 @@ var (
 
 )
 
-// getEnv - Allows us to supply a fallback option if nothing specified
-func getEnv(key, fallback string) string {
-	value := os.Getenv(key)
-	if len(value) == 0 {
-		return fallback
-	}
-	return value
-}
-
 func main() {
 	flag.Parse()
 
-	// Sets the logging value for the exporter, defaults to info
-	setLogLevel(logLevel)
-
 	// check the rancherURL ($CATTLE_URL) has been provided correctly
-	if rancherURL == "" {
+	if config.RancherURL() == "" {
 		log.Fatal("CATTLE_URL must be set and non-empty")
 	}
 
 	log.Info("Starting Prometheus Exporter for Rancher")
-	log.Info("Runtime Configuration in-use: URL of Rancher Server: ", rancherURL, " AccessKey: ", accessKey, "System Services hidden: ", hideSys)
+	log.Info("Runtime Configuration in-use: URL of Rancher Server: ", config.RancherURL(), " AccessKey: ", config.AccessKey(), "System Services hidden: ", config.HideSys())
 
 	// Register internal metrics used for tracking the exporter performance
 	measure.Init()
 
 	// Register a new Exporter
-	Exporter := newExporter(rancherURL, accessKey, secretKey, hideSys)
+	Exporter := newExporter(config)
 
 	// Register Metrics from each of the endpoints
 	// This invokes the Collect method through the prometheus client libraries.
 	prometheus.MustRegister(Exporter)
 
 	// Setup HTTP handler
-	http.Handle(metricsPath, prometheus.Handler())
+	http.Handle(config.MetricsPath(), prometheus.Handler())
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<html>
 		                <head><title>Rancher exporter</title></head>
 		                <body>
 		                   <h1>rancher exporter</h1>
-		                   <p><a href='` + metricsPath + `'>Metrics</a></p>
+		                   <p><a href='` + config.MetricsPath() + `'>Metrics</a></p>
 		                   </body>
 		                </html>
 		              `))
 	})
-	log.Printf("Starting Server on port %s and path %s", listenAddress, metricsPath)
-	log.Fatal(http.ListenAndServe(listenAddress, nil))
+	log.Printf("Starting Server on port %s and path %s", config.ListenPort(), config.MetricsPath())
+	log.Fatal(http.ListenAndServe(config.ListenPort(), nil))
 }
